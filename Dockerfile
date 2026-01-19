@@ -1,25 +1,20 @@
-FROM python:3.9-slim
+# 使用包含常用依赖的 Python 镜像
+FROM python:3.9
 
 WORKDIR /app
 
-# 安装编译工具
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# 复制文件
+COPY yspapp.py .
+COPY ysp.txt .
+COPY requirements.txt .
 
-# 复制应用文件
-COPY . .
-
-# 尝试多个镜像源
-RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple --trusted-host pypi.tuna.tsinghua.edu.cn \
-    construct==2.8.8 fastapi==0.127.0 requests==2.32.5 uvicorn==0.40.0 || \
-    pip install --no-cache-dir -i https://mirrors.cloud.tencent.com/pypi/simple --trusted-host mirrors.cloud.tencent.com \
-    construct==2.8.8 fastapi==0.127.0 requests==2.32.5 uvicorn==0.40.0 || \
-    pip install --no-cache-dir -i https://pypi.douban.com/simple --trusted-host pypi.douban.com \
-    construct==2.8.8 fastapi==0.127.0 requests==2.32.5 uvicorn==0.40.0 || \
-    pip install --no-cache-dir \
-    construct==2.8.8 fastapi==0.127.0 requests==2.32.5 uvicorn==0.40.0
+# 使用系统默认源，不指定镜像
+# 只安装核心依赖，去掉版本号
+RUN pip install --no-cache-dir \
+    construct \
+    fastapi \
+    requests \
+    uvicorn
 
 EXPOSE 10001
 
