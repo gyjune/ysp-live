@@ -61,7 +61,7 @@ class Size_t:
 def TeaEncryptECB(pInBuf: bytes, pKey: bytes, pOutBuf: bytearray) -> None:
     k = list(struct.unpack("!IIII", pKey))
     y, z = struct.unpack("!II", pInBuf[:8])
-    
+
     sum_val = 0
     for _ in range(ROUNDS):
         sum_val += DELTA
@@ -70,14 +70,14 @@ def TeaEncryptECB(pInBuf: bytes, pKey: bytes, pOutBuf: bytearray) -> None:
         y = ctypes.c_uint32(y).value
         z += ((y << 4) + k[2]) ^ (y + sum_val) ^ ((y >> 5) + k[3])
         z = ctypes.c_uint32(z).value
-    
+
     pOutBuf.clear()
     pOutBuf.extend(struct.pack("!II", y, z))
 
 def TeaDecryptECB(pInBuf: bytes, pKey: bytes, pOutBuf: bytearray) -> None:
     k = list(struct.unpack("!IIII", pKey))
     y, z = struct.unpack("!II", pInBuf[:8])
-    
+
     sum_val = ctypes.c_uint32(DELTA << LOG_ROUNDS).value
     for _ in range(ROUNDS):
         z -= ((y << 4) + k[2]) ^ (y + sum_val) ^ ((y >> 5) + k[3])
@@ -85,7 +85,7 @@ def TeaDecryptECB(pInBuf: bytes, pKey: bytes, pOutBuf: bytearray) -> None:
         y -= ((z << 4) + k[0]) ^ (z + sum_val) ^ ((z >> 5) + k[1])
         y = ctypes.c_uint32(y).value
         sum_val -= DELTA
-    
+
     pOutBuf.clear()
     pOutBuf.extend(struct.pack("!II", y, z))
 
@@ -115,20 +115,20 @@ def oi_symmetry_encrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: by
     nPadlen = nPadSaltBodyZeroLen % 8
     if nPadlen:
         nPadlen = 8 - nPadlen
-    
+
     src_buf = bytearray([0] * 8)
     src_buf[0] = (random.randint(0, 255) & 0xf8) | nPadlen
     src_i = 1
-    
+
     while nPadlen:
         src_buf[src_i] = random.randint(0, 255)
         src_i += 1
         nPadlen -= 1
-    
+
     iv_plain = bytearray([0] * 8)
     iv_crypt = bytearray(iv_plain)
     pOutBufLen.value = 0
-    
+
     i = 1
     while i <= SALT_LEN:
         if src_i < 8:
@@ -138,19 +138,19 @@ def oi_symmetry_encrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: by
         if src_i == 8:
             for j in range(8):
                 src_buf[j] ^= iv_crypt[j]
-            
+
             temp_pOutBuf = bytearray()
             TeaEncryptECB(src_buf, pKey, temp_pOutBuf)
-            
+
             for j in range(8):
                 temp_pOutBuf[j] ^= iv_plain[j]
-            
+
             iv_plain = bytearray(src_buf)
             src_i = 0
             iv_crypt = bytearray(temp_pOutBuf)
             pOutBufLen.value += 8
             pOutBuf.extend(temp_pOutBuf)
-    
+
     pInBufIndex = 0
     while nInBufLen:
         if src_i < 8:
@@ -161,19 +161,19 @@ def oi_symmetry_encrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: by
         if src_i == 8:
             for j in range(8):
                 src_buf[j] ^= iv_crypt[j]
-            
+
             temp_pOutBuf = bytearray()
             TeaEncryptECB(src_buf, pKey, temp_pOutBuf)
-            
+
             for j in range(8):
                 temp_pOutBuf[j] ^= iv_plain[j]
-            
+
             iv_plain = bytearray(src_buf)
             src_i = 0
             iv_crypt = bytearray(temp_pOutBuf)
             pOutBufLen.value += 8
             pOutBuf.extend(temp_pOutBuf)
-    
+
     i = 1
     while i <= ZERO_LEN:
         if src_i < 8:
@@ -183,13 +183,13 @@ def oi_symmetry_encrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: by
         if src_i == 8:
             for j in range(8):
                 src_buf[j] ^= iv_crypt[j]
-            
+
             temp_pOutBuf = bytearray()
             TeaEncryptECB(src_buf, pKey, temp_pOutBuf)
-            
+
             for j in range(8):
                 temp_pOutBuf[j] ^= iv_plain[j]
-            
+
             iv_plain = bytearray(src_buf)
             src_i = 0
             iv_crypt = temp_pOutBuf
@@ -199,25 +199,25 @@ def oi_symmetry_encrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: by
 def oi_symmetry_decrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: bytearray, pOutBufLen: Size_t) -> bool:
     if (nInBufLen % 8) or (nInBufLen < 16):
         return False
-    
+
     dest_buf = bytearray()
     TeaDecryptECB(pInBuf, pKey, dest_buf)
-    
+
     nPadLen = dest_buf[0] & 0x7
     i = nInBufLen - 1 - nPadLen - SALT_LEN - ZERO_LEN
-    
+
     if (pOutBufLen.value < i) or (i < 0):
         return False
-    
+
     pOutBufLen.value = i
     zero_buf = bytearray([0] * 8)
     iv_pre_crypt = bytearray(zero_buf)
     iv_cur_crypt = bytearray(pInBuf)
-    
+
     pInBuf = pInBuf[8:]
     nBufPos = 8
     dest_i = 1 + nPadLen
-    
+
     i = 1
     while i <= SALT_LEN:
         if dest_i < 8:
@@ -226,17 +226,17 @@ def oi_symmetry_decrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: by
         elif dest_i == 8:
             iv_pre_crypt = bytearray(iv_cur_crypt)
             iv_cur_crypt = bytearray(pInBuf)
-            
+
             for j in range(8):
                 if nBufPos + j >= nInBufLen:
                     return False
                 dest_buf[j] ^= pInBuf[j]
-            
+
             TeaDecryptECB(bytes(dest_buf), pKey, dest_buf)
             pInBuf = pInBuf[8:]
             nBufPos += 8
             dest_i = 0
-    
+
     nPlainLen = pOutBufLen.value
     while nPlainLen:
         if dest_i < 8:
@@ -246,17 +246,17 @@ def oi_symmetry_decrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: by
         elif dest_i == 8:
             iv_pre_crypt = bytearray(iv_cur_crypt)
             iv_cur_crypt = bytearray(pInBuf)
-            
+
             for j in range(8):
                 if nBufPos + j >= nInBufLen:
                     return False
                 dest_buf[j] ^= pInBuf[j]
-            
+
             TeaDecryptECB(bytes(dest_buf), pKey, dest_buf)
             pInBuf = pInBuf[8:]
             nBufPos += 8
             dest_i = 0
-    
+
     i = 1
     while i <= ZERO_LEN:
         if dest_i < 8:
@@ -267,17 +267,17 @@ def oi_symmetry_decrypt2(pInBuf: bytes, nInBufLen: int, pKey: bytes, pOutBuf: by
         elif dest_i == 8:
             iv_pre_crypt = bytearray(iv_cur_crypt)
             iv_cur_crypt = bytearray(pInBuf)
-            
+
             for j in range(8):
                 if nBufPos + j >= nInBufLen:
                     return False
                 dest_buf[j] ^= pInBuf[j]
-            
+
             TeaDecryptECB(bytes(dest_buf), pKey, dest_buf)
             pInBuf = pInBuf[8:]
             nBufPos += 8
             dest_i = 0
-    
+
     return True
 
 def tc_tea_encrypt(keys: bytes, message: bytes) -> bytes:
@@ -364,38 +364,174 @@ def ckey42(Platform, Timestamp, Sdtfrom="fcgo", vid="600002264", guid=None, appV
 app = FastAPI()
 
 def get_current_host(request: Request):
-    """获取当前服务的主机地址"""
-    host = request.headers.get('host')
-    if host:
-        return host
-    
+    """获取当前服务的主机地址 - 修改版：始终返回服务器实际IP"""
+    # 方法1：始终尝试获取服务器网络IP
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
-        local_ip = s.getsockname()[0]
+        server_ip = s.getsockname()[0]
         s.close()
-        return f"{local_ip}:10001"
+        # 确保获取到的是真实IP，不是回环地址
+        if server_ip and server_ip != '127.0.0.1' and server_ip != '0.0.0.0':
+            return f"{server_ip}:10001"
     except:
-        return "localhost:10001"
+        pass
+    
+    # 方法2：如果获取网络IP失败，尝试从环境变量获取
+    if 'SERVER_HOST' in os.environ:
+        host = os.environ['SERVER_HOST']
+        if host:
+            return host
+    
+    # 方法3：使用请求的host头（去掉端口部分检查）
+    host = request.headers.get('host')
+    if host:
+        # 如果host是localhost或127.0.0.1，不使用
+        if 'localhost' not in host and '127.0.0.1' not in host and '0.0.0.0' not in host:
+            return host
+        else:
+            # 尝试提取IP部分
+            try:
+                # 获取服务器的所有网络接口IP
+                import netifaces
+                for interface in netifaces.interfaces():
+                    addrs = netifaces.ifaddresses(interface)
+                    if netifaces.AF_INET in addrs:
+                        for addr_info in addrs[netifaces.AF_INET]:
+                            ip = addr_info['addr']
+                            if ip and ip != '127.0.0.1' and ip != '0.0.0.0':
+                                return f"{ip}:10001"
+            except:
+                pass
+    
+    # 方法4：默认返回（理论上不会走到这里）
+    return "localhost:10001"
 
 def generate_channel_list(host):
-    """生成频道列表"""
+    """生成频道列表 - 修改版：确保使用正确的服务器地址"""
     try:
+        # 读取频道列表文件
         with open('ysp.txt', 'r', encoding='utf-8') as f:
             content = f.read()
-            # 替换端口号为当前服务地址
-            content = content.replace(':8080/ysp?', f':{host.split(":")[-1] if ":" in host else "10001"}/ysp?')
-            return content
-    except:
-        # 如果文件不存在，返回默认列表
-        return "央视,#genre#\nCCTV1,http://localhost:10001/ysp?cnlid=2024078201&livepid=600001859&defn=fhd"
+        
+        # 解析host，获取IP和端口
+        if ':' in host:
+            # 格式可能是 "192.168.0.4:10001" 或 "192.168.0.4"
+            parts = host.split(':')
+            if len(parts) == 2:
+                server_ip = parts[0]
+                server_port = parts[1]
+            else:
+                server_ip = host
+                server_port = "10001"
+        else:
+            server_ip = host
+            server_port = "10001"
+        
+        # 构建完整的服务器地址
+        server_address = f"{server_ip}:{server_port}"
+        
+        # 替换所有链接中的地址
+        # 先尝试替换硬编码的地址格式
+        import re
+        
+        # 替换格式1: http://IP:端口/ysp?
+        pattern1 = r'http://[^:/]+(?::\d+)?/ysp\?'
+        replacement1 = f'http://{server_address}/ysp?'
+        content = re.sub(pattern1, replacement1, content)
+        
+        # 替换格式2: http://IP/ysp?（没有端口的情况）
+        pattern2 = r'http://[^/]+/ysp\?'
+        replacement2 = f'http://{server_address}/ysp?'
+        content = re.sub(pattern2, replacement2, content)
+        
+        # 替换格式3: 各种可能的IP:端口组合
+        # 处理类似 :8080/ysp? 的相对路径（如果存在）
+        if ':8080/ysp?' in content:
+            content = content.replace(':8080/ysp?', f':{server_port}/ysp?')
+        
+        return content
+        
+    except FileNotFoundError:
+        # 如果文件不存在，使用动态生成的列表
+        if ':' in host:
+            parts = host.split(':')
+            if len(parts) == 2:
+                server_ip = parts[0]
+                server_port = parts[1]
+            else:
+                server_ip = host
+                server_port = "10001"
+        else:
+            server_ip = host
+            server_port = "10001"
+        
+        server_address = f"{server_ip}:{server_port}"
+        
+        # 返回基础的频道列表
+        return f"""央视,#genre#
+CCTV1,http://{server_address}/ysp?cnlid=2024078201&livepid=600001859&defn=fhd
+CCTV2,http://{server_address}/ysp?cnlid=2024075401&livepid=600001800&defn=fhd
+CCTV3,http://{server_address}/ysp?cnlid=2024068501&livepid=600001801&defn=fhd
+CCTV4,http://{server_address}/ysp?cnlid=2024078301&livepid=600001814&defn=fhd
+CCTV5,http://{server_address}/ysp?cnlid=2024078401&livepid=600001818&defn=fhd
+CCTV5+,http://{server_address}/ysp?cnlid=2024078001&livepid=600001817&defn=fhd
+CCTV6,http://{server_address}/ysp?cnlid=2013693901&livepid=600108442&defn=fhd
+CCTV7,http://{server_address}/ysp?cnlid=2024072001&livepid=600004092&defn=fhd
+CCTV8,http://{server_address}/ysp?cnlid=2024078501&livepid=600001803&defn=fhd
+CCTV9,http://{server_address}/ysp?cnlid=2024078601&livepid=600004078&defn=fhd
+CCTV10,http://{server_address}/ysp?cnlid=2024078701&livepid=600001805&defn=fhd
+CCTV11,http://{server_address}/ysp?cnlid=2027248701&livepid=600001806&defn=fhd
+CCTV12,http://{server_address}/ysp?cnlid=2027248801&livepid=600001807&defn=fhd
+CCTV13,http://{server_address}/ysp?cnlid=2024079001&livepid=600001811&defn=fhd
+CCTV14,http://{server_address}/ysp?cnlid=2027248901&livepid=600001809&defn=fhd
+CCTV15,http://{server_address}/ysp?cnlid=2027249001&livepid=600001815&defn=fhd
+CCTV16,http://{server_address}/ysp?cnlid=2027249101&livepid=600098637&defn=fhd
+CCTV16(4K),http://{server_address}/ysp?cnlid=2027249301&livepid=600099502&defn=hdr
+CCTV17,http://{server_address}/ysp?cnlid=2027249401&livepid=600001810&defn=fhd"""
+    except Exception as e:
+        # 如果其他错误，返回错误信息
+        return f"Error generating channel list: {str(e)}"
 
 @app.get("/")
 async def root(request: Request):
     """根路径，返回播放列表"""
+    # 获取当前主机地址
     host = get_current_host(request)
+    
+    # 生成频道列表
     channel_list = generate_channel_list(host)
+    
     return Response(content=channel_list, media_type="text/plain; charset=utf-8")
+
+@app.get("/debug")
+async def debug_info(request: Request):
+    """调试信息接口，用于检查IP获取情况"""
+    info = {
+        "request_headers": dict(request.headers),
+        "request_client": str(request.client),
+        "request_url": str(request.url),
+        "calculated_host": get_current_host(request),
+        "server_hostname": socket.gethostname() if hasattr(socket, 'gethostname') else "unknown",
+        "server_ips": []
+    }
+    
+    # 获取所有网络接口IP
+    try:
+        import netifaces
+        for interface in netifaces.interfaces():
+            addrs = netifaces.ifaddresses(interface)
+            if netifaces.AF_INET in addrs:
+                for addr_info in addrs[netifaces.AF_INET]:
+                    info["server_ips"].append({
+                        "interface": interface,
+                        "ip": addr_info['addr'],
+                        "netmask": addr_info.get('netmask', 'unknown')
+                    })
+    except:
+        info["server_ips"] = "netifaces module not available"
+    
+    return JSONResponse(content=info)
 
 @app.get("/ysp")
 def ysp(cnlid: str, livepid: str, defn: str = "auto"):
@@ -445,27 +581,27 @@ def ysp(cnlid: str, livepid: str, defn: str = "auto"):
             'Connection': "Keep-Alive",
             'Accept-Encoding': "gzip"
         }
-        
+
         Platform = params['platform']
         Timestamp = int(time.time())
         appVer = params['appVer']
         Cnlid = params['cnlid']
         StaGuid = RandomHexStr(32)
         sdtfrom = 'dcgh'
-        
+
         ckey = ckey42(Platform, Timestamp, sdtfrom, Cnlid, StaGuid, appVer)
         params.update({"cKey": ckey})
-        
+
         response = requests.get(url, params=params, headers=headers, timeout=10)
         data = response.json()
-        
+
         if defn == "auto":
             formats = data['formats']
             return JSONResponse(content={"formats": formats})
-        
+
         url = data['playurl']
         return RedirectResponse(url=url)
-        
+
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
