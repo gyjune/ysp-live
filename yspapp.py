@@ -364,104 +364,55 @@ def ckey42(Platform, Timestamp, Sdtfrom="fcgo", vid="600002264", guid=None, appV
 app = FastAPI()
 
 def get_current_host(request: Request):
-    """获取当前服务的主机地址 - 修改版：始终返回服务器实际IP"""
-    # 方法1：始终尝试获取服务器网络IP
+    """获取当前服务的主机地址 - 最简单版本：直接使用请求的Host头"""
+    # 直接使用请求中的Host头
+    host = request.headers.get('host')
+    
+    if host:
+        return host
+    
+    # 如果没有Host头，回退到服务器IP
     try:
+        # 获取服务器网络IP
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         server_ip = s.getsockname()[0]
         s.close()
-        # 确保获取到的是真实IP，不是回环地址
-        if server_ip and server_ip != '127.0.0.1' and server_ip != '0.0.0.0':
-            return f"{server_ip}:10001"
+        return f"{server_ip}:10001"
     except:
-        pass
-    
-    # 方法2：如果获取网络IP失败，尝试从环境变量获取
-    if 'SERVER_HOST' in os.environ:
-        host = os.environ['SERVER_HOST']
-        if host:
-            return host
-    
-    # 方法3：使用请求的host头（去掉端口部分检查）
-    host = request.headers.get('host')
-    if host:
-        # 如果host是localhost或127.0.0.1，不使用
-        if 'localhost' not in host and '127.0.0.1' not in host and '0.0.0.0' not in host:
-            return host
-        else:
-            # 尝试提取IP部分
-            try:
-                # 获取服务器的所有网络接口IP
-                import netifaces
-                for interface in netifaces.interfaces():
-                    addrs = netifaces.ifaddresses(interface)
-                    if netifaces.AF_INET in addrs:
-                        for addr_info in addrs[netifaces.AF_INET]:
-                            ip = addr_info['addr']
-                            if ip and ip != '127.0.0.1' and ip != '0.0.0.0':
-                                return f"{ip}:10001"
-            except:
-                pass
-    
-    # 方法4：默认返回（理论上不会走到这里）
-    return "localhost:10001"
+        return "localhost:10001"
 
 def generate_channel_list(host):
-    """生成频道列表 - 修改版：确保使用正确的服务器地址"""
+    """生成频道列表"""
     try:
-        # 读取频道列表文件
         with open('ysp.txt', 'r', encoding='utf-8') as f:
             content = f.read()
-        
-        # 解析host，获取IP和端口
-        if ':' in host:
-            # 格式可能是 "192.168.0.4:10001" 或 "192.168.0.4"
-            parts = host.split(':')
-            if len(parts) == 2:
-                server_ip = parts[0]
-                server_port = parts[1]
+            
+            # 解析host，获取IP和端口
+            if ':' in host:
+                # 格式：192.168.0.4:10001
+                server_ip = host.split(':')[0]
+                server_port = host.split(':')[1]
             else:
                 server_ip = host
                 server_port = "10001"
-        else:
-            server_ip = host
-            server_port = "10001"
-        
-        # 构建完整的服务器地址
-        server_address = f"{server_ip}:{server_port}"
-        
-        # 替换所有链接中的地址
-        # 先尝试替换硬编码的地址格式
-        import re
-        
-        # 替换格式1: http://IP:端口/ysp?
-        pattern1 = r'http://[^:/]+(?::\d+)?/ysp\?'
-        replacement1 = f'http://{server_address}/ysp?'
-        content = re.sub(pattern1, replacement1, content)
-        
-        # 替换格式2: http://IP/ysp?（没有端口的情况）
-        pattern2 = r'http://[^/]+/ysp\?'
-        replacement2 = f'http://{server_address}/ysp?'
-        content = re.sub(pattern2, replacement2, content)
-        
-        # 替换格式3: 各种可能的IP:端口组合
-        # 处理类似 :8080/ysp? 的相对路径（如果存在）
-        if ':8080/ysp?' in content:
-            content = content.replace(':8080/ysp?', f':{server_port}/ysp?')
-        
-        return content
-        
+            
+            server_address = f"{server_ip}:{server_port}"
+            
+            # 简单替换所有链接地址
+            import re
+            # 替换所有 http://IP:端口/ysp? 格式
+            pattern = r'http://[^/]+/ysp\?'
+            replacement = f'http://{server_address}/ysp?'
+            content = re.sub(pattern, replacement, content)
+            
+            return content
+            
     except FileNotFoundError:
-        # 如果文件不存在，使用动态生成的列表
+        # 如果文件不存在，使用默认列表
         if ':' in host:
-            parts = host.split(':')
-            if len(parts) == 2:
-                server_ip = parts[0]
-                server_port = parts[1]
-            else:
-                server_ip = host
-                server_port = "10001"
+            server_ip = host.split(':')[0]
+            server_port = host.split(':')[1]
         else:
             server_ip = host
             server_port = "10001"
@@ -488,10 +439,11 @@ CCTV14,http://{server_address}/ysp?cnlid=2027248901&livepid=600001809&defn=fhd
 CCTV15,http://{server_address}/ysp?cnlid=2027249001&livepid=600001815&defn=fhd
 CCTV16,http://{server_address}/ysp?cnlid=2027249101&livepid=600098637&defn=fhd
 CCTV16(4K),http://{server_address}/ysp?cnlid=2027249301&livepid=600099502&defn=hdr
-CCTV17,http://{server_address}/ysp?cnlid=2027249401&livepid=600001810&defn=fhd"""
+CCTV17,http://{server_address}/ysp?cnlid=2027249401&livepid=600001810&defn=fhd
+CCTV4K,http://{server_address}/ysp?cnlid=2027249501&livepid=600002264&defn=hdr
+CCTV8K,http://{server_address}/ysp?cnlid=2026774101&livepid=600156816&defn=hdr"""
     except Exception as e:
-        # 如果其他错误，返回错误信息
-        return f"Error generating channel list: {str(e)}"
+        return f"Error: {str(e)}"
 
 @app.get("/")
 async def root(request: Request):
@@ -506,31 +458,15 @@ async def root(request: Request):
 
 @app.get("/debug")
 async def debug_info(request: Request):
-    """调试信息接口，用于检查IP获取情况"""
+    """调试信息"""
+    host = get_current_host(request)
     info = {
-        "request_headers": dict(request.headers),
+        "request_host_header": request.headers.get('host'),
+        "calculated_host": host,
         "request_client": str(request.client),
         "request_url": str(request.url),
-        "calculated_host": get_current_host(request),
-        "server_hostname": socket.gethostname() if hasattr(socket, 'gethostname') else "unknown",
-        "server_ips": []
+        "headers": dict(request.headers)
     }
-    
-    # 获取所有网络接口IP
-    try:
-        import netifaces
-        for interface in netifaces.interfaces():
-            addrs = netifaces.ifaddresses(interface)
-            if netifaces.AF_INET in addrs:
-                for addr_info in addrs[netifaces.AF_INET]:
-                    info["server_ips"].append({
-                        "interface": interface,
-                        "ip": addr_info['addr'],
-                        "netmask": addr_info.get('netmask', 'unknown')
-                    })
-    except:
-        info["server_ips"] = "netifaces module not available"
-    
     return JSONResponse(content=info)
 
 @app.get("/ysp")
