@@ -20,4 +20,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 应用入口点
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "10001"]
+CMD ["uvicorn", "yspapp:app", "--host", "0.0.0.0", "--port", "10001"]
