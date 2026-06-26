@@ -10,11 +10,20 @@ import json
 import socket
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from cachetools import TTLCache
+import asyncio
+import aiohttp
 
 import requests
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import RedirectResponse, JSONResponse
 import uvicorn
+
+# ============== 缓存设置 ==============
+# 播放地址缓存，TTL 80秒，最多存储 100 个频道
+PLAYURL_CACHE = TTLCache(maxsize=100, ttl=80)
+# cKey 缓存，TTL 60秒
+CKEY_CACHE = TTLCache(maxsize=100, ttl=60)
 
 # ============== 频道映射 ==============
 CHANNELS = {
@@ -382,6 +391,17 @@ def encrypt_data_to_ckey(data):
     return "--01" + custom_encode(result)
 
 
+def get_cached_ckey(cnlid, timestamp):
+    """获取缓存的 cKey"""
+    cache_key = f"{cnlid}:{timestamp//60}"  # 每分钟换一次
+    if cache_key in CKEY_CACHE:
+        return CKEY_CACHE[cache_key]
+    
+    ckey_result = generate_ckey(cnlid, timestamp)
+    CKEY_CACHE[cache_key] = ckey_result
+    return ckey_result
+
+
 def generate_ckey(cnlid, timestamp=None):
     if timestamp is None:
         timestamp = int(time.time())
@@ -458,9 +478,29 @@ def send_http_request(params):
         }
 
 
+def get_play_url_with_cache(cnlid, livepid, defn, playseek=None):
+    """带缓存的播放地址获取"""
+    # 如果是回看，不使用缓存
+    if playseek:
+        return get_play_url(cnlid, livepid, defn, playseek)
+    
+    # 直播使用缓存
+    cache_key = f"{cnlid}:{livepid}:{defn}"
+    
+    if cache_key in PLAYURL_CACHE:
+        return PLAYURL_CACHE[cache_key]
+    
+    play_url = get_play_url(cnlid, livepid, defn, playseek)
+    
+    if play_url:
+        PLAYURL_CACHE[cache_key] = play_url
+    
+    return play_url
+
+
 def get_play_url(cnlid, livepid, defn, playseek=None):
     timestamp = int(time.time())
-    ckey_result = generate_ckey(cnlid, timestamp)
+    ckey_result = get_cached_ckey(cnlid, timestamp)
 
     flowid = f"{uuid.uuid4()}_4330403"
 
@@ -553,7 +593,7 @@ def get_play_url(cnlid, livepid, defn, playseek=None):
 
 
 # ============== FastAPI应用 ==============
-app = FastAPI(title="央视影音直播代理", description="央视影音 PHP 转 Python FastAPI 版本")
+app = FastAPI(title="央视影音直播代理", description="央视影音 PHP 转 Python FastAPI 版本（优化版）")
 
 # 频道名称映射
 CHANNEL_NAMES = {
@@ -597,6 +637,37 @@ def get_server_host(request: Request):
         return "localhost:10001"
 
 
+# ============== 启动预热 ==============
+@app.on_event("startup")
+async def startup_event():
+    """启动时预热缓存"""
+    print("=" * 60)
+    print("🚀 央视影音直播代理启动中...")
+    print("=" * 60)
+    
+    # 预热常用频道
+    hot_channels = ['cctv1', 'cctv2', 'cctv3', 'cctv4', 'cctv5', 
+                    'cctv6', 'cctv13', 'bjws', 'dfws', 'zjws', 'hnws']
+    
+    print("📡 预热缓存中...")
+    for channel_id in hot_channels:
+        if channel_id in CHANNELS:
+            cnlid, livepid, defn = CHANNELS[channel_id]
+            try:
+                play_url = get_play_url_with_cache(cnlid, livepid, defn)
+                if play_url:
+                    print(f"  ✅ 预加载成功: {channel_id}")
+                else:
+                    print(f"  ⚠️ 预加载失败: {channel_id}")
+            except Exception as e:
+                print(f"  ❌ 预加载异常 {channel_id}: {e}")
+    
+    print("=" * 60)
+    print("✅ 缓存预热完成")
+    print("=" * 60)
+
+
+# ============== API 路由 ==============
 @app.get("/")
 async def root(request: Request):
     """根路径 - 返回M3U格式频道列表"""
@@ -625,8 +696,8 @@ async def get_stream(id: str, playseek: Optional[str] = None):
 
     cnlid, livepid, defn = CHANNELS[id]
 
-    # 获取播放地址
-    play_url = get_play_url(cnlid, livepid, defn, playseek)
+    # 使用带缓存的函数获取播放地址
+    play_url = get_play_url_with_cache(cnlid, livepid, defn, playseek)
 
     if play_url:
         return RedirectResponse(url=play_url)
@@ -664,45 +735,34 @@ async def channel_info(id: str):
     })
 
 
-@app.get("/test/{id}")
-async def test_channel(id: str):
-    """测试频道 - 返回cKey生成和请求详情"""
-    if id not in CHANNELS:
-        return JSONResponse(content={"error": "频道不存在"}, status_code=404)
-
-    cnlid, livepid, defn = CHANNELS[id]
-
-    # 生成cKey
-    timestamp = int(time.time())
-    ckey_result = generate_ckey(cnlid, timestamp)
-
-    # 构建请求参数
-    request_params = {
-        "cnlid": cnlid,
-        "livepid": livepid,
-        "defn": defn,
-        "cKey": ckey_result['ckey'][:50] + "...",
-        "guid": ckey_result['params']['guid'],
-        "timestamp": timestamp,
-        "ck_guard_time": ckey_result['params']['ck_guard_time']
-    }
-
+@app.get("/cache/status")
+async def cache_status():
+    """查看缓存状态"""
     return JSONResponse(content={
-        "channel": id,
-        "name": CHANNEL_NAMES.get(id, id),
-        "params": request_params,
-        "ckey_full": ckey_result['ckey']
+        "playurl_cache_size": len(PLAYURL_CACHE),
+        "playurl_cache_maxsize": PLAYURL_CACHE.maxsize,
+        "ckey_cache_size": len(CKEY_CACHE),
+        "ckey_cache_maxsize": CKEY_CACHE.maxsize
     })
+
+
+@app.get("/cache/clear")
+async def clear_cache():
+    """清空缓存"""
+    PLAYURL_CACHE.clear()
+    CKEY_CACHE.clear()
+    return JSONResponse(content={"message": "缓存已清空"})
 
 
 # ============== 启动服务 ==============
 if __name__ == '__main__':
     print("=" * 60)
-    print("央视影音直播代理服务启动")
+    print("央视影音直播代理服务启动 (优化版)")
     print("=" * 60)
     print(f"服务地址: http://0.0.0.0:10001")
     print(f"频道列表: http://0.0.0.0:10001/")
     print(f"播放示例: http://0.0.0.0:10001/ysp?id=cctv1")
     print(f"频道列表JSON: http://0.0.0.0:10001/channels")
+    print(f"缓存状态: http://0.0.0.0:10001/cache/status")
     print("=" * 60)
     uvicorn.run(app, host="0.0.0.0", port=10001)
